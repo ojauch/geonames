@@ -67,7 +67,6 @@ def search_place(place, username, limit=100):
     if r.status_code != 200:
         return []
 
-    # parse XML
     root = ET.fromstring(r.text)
 
     return [GeonamePlace.fromxml(xml_element) for xml_element in root.findall('.//geoname')]
