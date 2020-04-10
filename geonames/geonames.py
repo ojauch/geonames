@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import argparse
+import os
 import requests
 import sys
 import xml.etree.ElementTree as ET
@@ -9,6 +10,7 @@ BASE_URL = 'http://api.geonames.org/search'
 
 JSON = 'json'
 CSV = 'csv'
+ENV_USERNAME = 'GEONAMES_USERNAME'
 
 PLACE_CACHE = {}
 
@@ -59,7 +61,10 @@ class GeonamePlace:
         return cls(toponymName, name, lat, lng, geoname_id, country_code, country_name, fcl, fcode)
 
 
-def search_place(place, username, limit=100):
+def search_place(place, username=os.environ.get(ENV_USERNAME), limit=100):
+    if username is None:
+        raise ValueError('username must be set')
+
     params = {'q': place, 'username': username, 'maxRows': limit}
 
     r = requests.get(BASE_URL, params=params)
@@ -72,7 +77,7 @@ def search_place(place, username, limit=100):
     return [GeonamePlace.fromxml(xml_element) for xml_element in root.findall('.//geoname')]
 
 
-def search_with_cache(place_name, username):
+def search_with_cache(place_name, username=None):
     if place_name in PLACE_CACHE:
         return PLACE_CACHE[place_name]
 
@@ -85,7 +90,7 @@ def search_with_cache(place_name, username):
     return None
 
 
-def search_places(place_names, username):
+def search_places(place_names, username=None):
     """Search for geonames for a list of place names"""
     places = []
     for name in place_names:
@@ -102,8 +107,8 @@ def main():
                         help='input file (default: stdin)')
     parser.add_argument('output', nargs='?', type=argparse.FileType('w'), default=sys.stdout,
                         help='output file (default: stdout)')
-    parser.add_argument('--username', '-u', nargs=1, dest='username', help='username to access geonames API',
-                        required=True)
+    parser.add_argument('--username', '-u', nargs='?', dest='username', help='username to access geonames API',
+                        default=os.environ.get(ENV_USERNAME))
     format_group = parser.add_mutually_exclusive_group(required=True)
     format_group.add_argument('--json', dest='out_format', action='store_const', const=JSON,
                               help='format output as JSON')
@@ -115,15 +120,19 @@ def main():
     place_names = [name for name in args.input]
     places = search_places(place_names, args.username)
 
-    if args.out_format == JSON:
-        import json
-        places = {'places': [vars(place) for place in places]}
-        args.output.write(json.dumps(places))
+    if places:
 
-    if args.out_format == CSV:
-        import csv
-        writer = csv.writer(args.output)
-        writer.writerows([(place.name, place.lat, place.lng, place.geoname_id) for place in places])
+        if args.out_format == JSON:
+            import json
+            places = {'places': [place.__dict__() for place in places]}
+            args.output.write(json.dumps(places))
+
+        if args.out_format == CSV:
+            import csv
+            writer = csv.writer(args.output)
+            # write header
+            writer.writerow(places[0].__dict__().keys())
+            writer.writerows([place.__dict__().values() for place in places])
 
 
 if __name__ == '__main__':
